@@ -25,6 +25,45 @@ namespace Emby.Plugins.Moonfin.Api
             ResultFactory = appHost.Resolve<IHttpResultFactory>();
         }
 
+        /// <summary>
+        /// Creates a Seerr session from the already-authenticated Jellyfin identity.
+        /// No Jellyfin credentials or client-selected identity are accepted.
+        /// </summary>
+        public async Task<object?> Post(SeerrBootstrapRequest request)
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config?.SeerrEnabled != true || string.IsNullOrEmpty(config.GetEffectiveSeerrUrl()))
+            {
+                Request.Response.StatusCode = 503;
+                return new { error = "Seerr integration is not enabled", success = false };
+            }
+
+            var user = AuthHelpers.GetCurrentUser(Request, _authContext);
+            if (user == null || user.Id == Guid.Empty)
+            {
+                Request.Response.StatusCode = 401;
+                return new { error = "User not authenticated", success = false };
+            }
+
+            if (string.IsNullOrWhiteSpace(user.Name))
+            {
+                Request.Response.StatusCode = 500;
+                return new { error = "Unable to resolve Jellyfin username", success = false };
+            }
+
+            var result = await Session
+                .BootstrapWithSeerrQcAsync(user.Id, user.Name)
+                .ConfigureAwait(false);
+
+            if (result == null || !result.Success)
+            {
+                Request.Response.StatusCode = 401;
+                return new { error = result?.Error ?? "Seerr+QC bootstrap failed", success = false };
+            }
+
+            return new { success = true, seerrUserId = result.SeerrUserId, jellyseerrUserId = result.SeerrUserId, displayName = result.DisplayName, avatar = result.Avatar, permissions = result.Permissions };
+        }
+
         public async Task<object?> Post(SeerrLoginRequest request)
         {
             var config = Plugin.Instance?.Configuration;

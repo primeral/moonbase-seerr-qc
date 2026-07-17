@@ -17,6 +17,9 @@ namespace Emby.Plugins.Moonfin
         /// <summary>Optional display name override. Leave empty to auto-detect.</summary>
         public string? SeerrDisplayName { get; set; }
 
+        /// <summary>Seerr API key used only for trusted server-to-server Seerr+QC bootstrap.</summary>
+        public string? SeerrApiKey { get; set; }
+
         /// <summary>Shared secret Seerr must present (header or query) when calling the Moonfin webhook. Auto-generated on first load if empty.</summary>
         public string? SeerrWebhookSecret { get; set; }
 

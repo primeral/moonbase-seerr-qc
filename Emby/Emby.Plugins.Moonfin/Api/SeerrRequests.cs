@@ -13,6 +13,12 @@ namespace Emby.Plugins.Moonfin.Api
         public string? AuthType { get; set; }
     }
 
+    [Route("/Moonfin/Seerr/Bootstrap", "POST")]
+    [Authenticated]
+    public class SeerrBootstrapRequest : IReturn<object>
+    {
+    }
+
     [Route("/Moonfin/Seerr/Status", "GET")]
 [Route("/Moonfin/Jellyseerr/Status", "GET")]
     [Authenticated]
