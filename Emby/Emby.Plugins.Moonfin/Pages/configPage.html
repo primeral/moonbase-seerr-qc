@@ -658,11 +658,19 @@
                                 </ul>
                                 This is the address the <em>Emby server</em> connects to behind the scenes, not the one you
                                 open in a web browser, so a local network or Docker address works fine. You do not enter a
-                                username, password, or API key here; people sign in later from the app.
+                                username or password here. The optional Seerr+QC API key below enables transparent sign-in.
                                 <br /><br />
                                 <strong>Advanced:</strong> If a reverse proxy in front of Seerr shows its own login page,
                                 let the Emby server through it. If Emby itself sits behind a reverse proxy, make sure
                                 that proxy forwards <code>/Moonfin/</code> requests to Emby.
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="SeerrApiKey">Seerr+QC API Key (Optional)</label>
+                            <input type="password" id="SeerrApiKey" is="emby-input" autocomplete="off" placeholder="Required for transparent Seerr+QC sign-in" />
+                            <div class="fieldDescription">
+                                Used only for trusted server-to-server session bootstrap with Seerr+QC.
+                                Leave blank when using ordinary Seerr and its manual sign-in fallback.
                             </div>
                         </div>
                         <div class="inputContainer">
@@ -675,10 +683,10 @@
                             </div>
                         </div>
                         <div style="background-color: rgba(0, 164, 220, 0.1); border-left: 4px solid #00a4dc; border-radius: 4px; padding: 1em 1.5em; margin: 1em 0;">
-                            <strong>SSO Proxy:</strong> When Seerr is enabled, Moonfin provides single sign-on.
-                            Users authenticate once with their Emby credentials, and the session is stored server-side.
-                            All Moonfin clients access Seerr API through <code>/Moonfin/Seerr/Api/</code>
-                            without re-authenticating.
+                            <strong>Seerr Session Proxy:</strong> Moonbase+QC transparently creates a Seerr session
+                            from the authenticated Jellyfin identity. Ordinary Seerr retains manual sign-in.
+                            Sessions remain server-side; clients use <code>/Moonfin/Seerr/Api/</code>
+                            without receiving the Seerr cookie.
                         </div>
                     </div>
 

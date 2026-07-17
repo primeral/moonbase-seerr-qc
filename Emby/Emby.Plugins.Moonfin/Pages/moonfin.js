@@ -1400,6 +1400,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
             view.querySelector('#EnableSettingsSync').checked = config.EnableSettingsSync;
             view.querySelector('#SeerrEnabled').checked = config.SeerrEnabled;
             view.querySelector('#SeerrUrl').value = config.SeerrUrl || '';
+            view.querySelector('#SeerrApiKey').value = config.SeerrApiKey || '';
             view.querySelector('#SeerrDisplayName').value = config.SeerrDisplayName || '';
             view.querySelector('#MdblistApiKey').value = config.MdblistApiKey || '';
             view.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
@@ -1496,6 +1497,7 @@ define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-checkbox', 'em
             config.EnableSettingsSync = view.querySelector('#EnableSettingsSync').checked;
             config.SeerrEnabled = view.querySelector('#SeerrEnabled').checked;
             config.SeerrUrl = view.querySelector('#SeerrUrl').value || null;
+            config.SeerrApiKey = view.querySelector('#SeerrApiKey').value || null;
             config.SeerrDisplayName = view.querySelector('#SeerrDisplayName').value || null;
             config.MdblistApiKey = view.querySelector('#MdblistApiKey').value || null;
             config.TmdbApiKey = view.querySelector('#TmdbApiKey').value || null;
