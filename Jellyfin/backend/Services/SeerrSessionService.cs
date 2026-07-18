@@ -48,6 +48,15 @@ public class SeerrSessionService
         {
             Directory.CreateDirectory(_sessionsPath);
         }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                _sessionsPath,
+                UnixFileMode.UserRead |
+                UnixFileMode.UserWrite |
+                UnixFileMode.UserExecute);
+        }
     }
 
     private string GetSessionPath(Guid userId) =>
@@ -1003,8 +1012,17 @@ public class SeerrSessionService
         try
         {
             EnsureDirectory();
+            var path = GetSessionPath(session.JellyfinUserId);
             var json = JsonSerializer.Serialize(session, _jsonOptions);
-            await File.WriteAllTextAsync(GetSessionPath(session.JellyfinUserId), json);
+            await File.WriteAllTextAsync(path, json);
+
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    path,
+                    UnixFileMode.UserRead |
+                    UnixFileMode.UserWrite);
+            }
         }
         finally
         {
