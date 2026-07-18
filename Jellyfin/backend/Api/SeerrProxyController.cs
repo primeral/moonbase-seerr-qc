@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net.Mime;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -20,6 +21,10 @@ public class SeerrProxyController : ControllerBase
 {
     private const int AdminBit = 2;
     private const int OwnerSeerrUserId = 1;
+    private const long BootstrapRetryDelayMs = 30000;
+
+    private static readonly object BootstrapLock = new();
+    private static readonly Dictionary<Guid, long> BootstrapRetryAfter = new();
 
     private readonly SeerrSessionService _sessionService;
     private readonly SeerrProvisioningService _provisioning;
@@ -30,6 +35,30 @@ public class SeerrProxyController : ControllerBase
         _provisioning = provisioning;
     }
 
+    private static bool ReserveBootstrapAttempt(Guid userId)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        lock (BootstrapLock)
+        {
+            if (BootstrapRetryAfter.TryGetValue(userId, out var retryAfter)
+                && retryAfter > now)
+            {
+                return false;
+            }
+
+            BootstrapRetryAfter[userId] = now + BootstrapRetryDelayMs;
+            return true;
+        }
+    }
+
+    private static void ClearBootstrapCooldown(Guid userId)
+    {
+        lock (BootstrapLock)
+        {
+            BootstrapRetryAfter.Remove(userId);
+        }
+    }
 
     /// <summary>
     /// Creates a Seerr session from the authenticated Jellyfin identity.
@@ -199,6 +228,29 @@ public class SeerrProxyController : ControllerBase
         }
 
         var session = await _sessionService.GetSessionAsync(userId.Value, validate: false);
+
+        // Existing clients request Status before opening Seerr. Use that request as
+        // an idempotent bootstrap trigger while preserving ordinary Seerr fallback.
+        if (session == null
+            && !string.IsNullOrWhiteSpace(config.SeerrApiKey)
+            && ReserveBootstrapAttempt(userId.Value))
+        {
+            var username = this.GetUsernameForUserId(userId.Value);
+            if (!string.IsNullOrWhiteSpace(username))
+            {
+                var result = await _sessionService.BootstrapWithSeerrQcAsync(
+                    userId.Value,
+                    username);
+
+                if (result?.Success == true)
+                {
+                    ClearBootstrapCooldown(userId.Value);
+                    session = await _sessionService.GetSessionAsync(
+                        userId.Value,
+                        validate: false);
+                }
+            }
+        }
 
         return Ok(new
         {
