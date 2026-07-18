@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -12,6 +13,10 @@ namespace Emby.Plugins.Moonfin.Api
     public class SeerrService : IService, IRequiresRequest, IHasResultFactory
     {
         private readonly IAuthorizationContext _authContext;
+        private static readonly object BootstrapLock = new object();
+        private static readonly Dictionary<Guid, long> BootstrapRetryAfter =
+            new Dictionary<Guid, long>();
+        private const long BootstrapRetryDelayMs = 30000;
 
         public IRequest Request { get; set; } = null!;
         public IHttpResultFactory ResultFactory { get; set; } = null!;
@@ -23,6 +28,27 @@ namespace Emby.Plugins.Moonfin.Api
         {
             _authContext = appHost.Resolve<IAuthorizationContext>();
             ResultFactory = appHost.Resolve<IHttpResultFactory>();
+        }
+
+        private static bool ReserveBootstrapAttempt(Guid userId)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            lock (BootstrapLock)
+            {
+                if (BootstrapRetryAfter.TryGetValue(userId, out var retryAfter)
+                    && retryAfter > now)
+                    return false;
+
+                BootstrapRetryAfter[userId] = now + BootstrapRetryDelayMs;
+                return true;
+            }
+        }
+
+        private static void ClearBootstrapCooldown(Guid userId)
+        {
+            lock (BootstrapLock)
+                BootstrapRetryAfter.Remove(userId);
         }
 
         /// <summary>
@@ -106,10 +132,31 @@ namespace Emby.Plugins.Moonfin.Api
             if (config?.SeerrEnabled != true || string.IsNullOrEmpty(config.GetEffectiveSeerrUrl()))
                 return new { enabled = false, authenticated = false, url = (string?)null };
 
-            var userId = AuthHelpers.GetCurrentUserId(Request, _authContext);
-            if (userId == null) return new { enabled = true, authenticated = false, url = config.SeerrUrl };
+            var user = AuthHelpers.GetCurrentUser(Request, _authContext);
+            if (user == null || user.Id == Guid.Empty)
+                return new { enabled = true, authenticated = false, url = config.SeerrUrl };
 
-            var sess = await Session.GetSessionAsync(userId.Value, validate: false).ConfigureAwait(false);
+            var sess = await Session.GetSessionAsync(user.Id, validate: false).ConfigureAwait(false);
+
+            // Existing Moonfin clients already request Status before opening Seerr.
+            // Use that request as an idempotent bootstrap trigger when Seerr+QC is configured.
+            if (sess == null
+                && !string.IsNullOrWhiteSpace(config.SeerrApiKey)
+                && !string.IsNullOrWhiteSpace(user.Name)
+                && ReserveBootstrapAttempt(user.Id))
+            {
+                var result = await Session
+                    .BootstrapWithSeerrQcAsync(user.Id, user.Name)
+                    .ConfigureAwait(false);
+
+                if (result?.Success == true)
+                {
+                    ClearBootstrapCooldown(user.Id);
+                    sess = await Session
+                        .GetSessionAsync(user.Id, validate: false)
+                        .ConfigureAwait(false);
+                }
+            }
             return new
             {
                 enabled = true,
