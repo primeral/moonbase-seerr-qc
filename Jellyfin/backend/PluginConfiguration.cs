@@ -25,6 +25,12 @@ public class PluginConfiguration : BasePluginConfiguration
     public string? SeerrUrl { get; set; }
 
     /// <summary>
+    /// Optional Seerr+QC API key used only for trusted server-to-server bootstrap.
+    /// Leave empty when using ordinary Seerr and manual sign-in.
+    /// </summary>
+    public string? SeerrApiKey { get; set; }
+
+    /// <summary>
     /// Optional display name override (e.g., "Requests", "Media Requests").
     /// Leave empty to auto-detect based on server version.
     /// </summary>

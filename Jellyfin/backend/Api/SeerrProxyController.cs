@@ -30,6 +30,78 @@ public class SeerrProxyController : ControllerBase
         _provisioning = provisioning;
     }
 
+
+    /// <summary>
+    /// Creates a Seerr session from the authenticated Jellyfin identity.
+    /// No Jellyfin credentials or client-selected identity are accepted.
+    /// </summary>
+    [HttpPost("Bootstrap")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Bootstrap()
+    {
+        var config = MoonfinPlugin.Instance?.Configuration;
+        var seerrUrl = config?.GetEffectiveSeerrUrl();
+        if (config?.SeerrEnabled != true || string.IsNullOrEmpty(seerrUrl))
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new
+                {
+                    error = "Seerr integration is not enabled",
+                    success = false
+                });
+        }
+
+        var userId = this.GetUserIdFromClaims();
+        if (userId == null)
+        {
+            return Unauthorized(new
+            {
+                error = "User not authenticated",
+                success = false
+            });
+        }
+
+        var username = this.GetUsernameForUserId(userId.Value);
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new
+                {
+                    error = "Unable to resolve Jellyfin username",
+                    success = false
+                });
+        }
+
+        var result = await _sessionService.BootstrapWithSeerrQcAsync(
+            userId.Value,
+            username);
+
+        if (result == null || !result.Success)
+        {
+            return Unauthorized(new
+            {
+                error = result?.Error ?? "Seerr+QC bootstrap failed",
+                success = false
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            seerrUserId = result.SeerrUserId,
+            jellyseerrUserId = result.SeerrUserId,
+            displayName = result.DisplayName,
+            avatar = result.Avatar,
+            permissions = result.Permissions
+        });
+    }
+
     /// <summary>
     /// Authenticate with Seerr using Jellyfin credentials.
     /// The session cookie is stored server-side and associated with the Jellyfin user.

@@ -406,6 +406,158 @@ public class SeerrSessionService
         }
     }
 
+
+    /// <summary>
+    /// Exchanges an authenticated Jellyfin identity for a Seerr+QC session.
+    /// Identity is supplied only by the authenticated Moonbase controller.
+    /// </summary>
+    public async Task<SeerrAuthResult?> BootstrapWithSeerrQcAsync(
+        Guid userId,
+        string username)
+    {
+        var config = MoonfinPlugin.Instance?.Configuration;
+        var seerrUrl = config?.GetEffectiveSeerrUrl();
+        var apiKey = config?.SeerrApiKey;
+
+        if (string.IsNullOrEmpty(seerrUrl))
+        {
+            return new SeerrAuthResult
+            {
+                Success = false,
+                Error = "Seerr URL not configured"
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return new SeerrAuthResult
+            {
+                Success = false,
+                Error = "Seerr API key not configured"
+            };
+        }
+
+        try
+        {
+            var cookieContainer = new CookieContainer();
+            using var handler = new HttpClientHandler
+            {
+                CookieContainer = cookieContainer,
+                UseCookies = true,
+                AllowAutoRedirect = false
+            };
+            using var client = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(15)
+            };
+
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "User-Agent",
+                "Moonbase-Seerr-QC");
+            client.DefaultRequestHeaders.TryAddWithoutValidation(
+                "X-API-Key",
+                apiKey);
+
+            var payload = new
+            {
+                jellyfinUserId = userId.ToString("D"),
+                jellyfinUsername = username
+            };
+
+            using var content = new StringContent(
+                JsonSerializer.Serialize(payload),
+                Encoding.UTF8,
+                "application/json");
+
+            using var response = await client.PostAsync(
+                seerrUrl + "/api/v1/auth/jellyfin/moonbase/bootstrap",
+                content);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "Seerr+QC bootstrap rejected Jellyfin user {UserId} " +
+                    "with status {Status}",
+                    userId,
+                    response.StatusCode);
+
+                return new SeerrAuthResult
+                {
+                    Success = false,
+                    Error = $"Seerr+QC bootstrap failed: {response.StatusCode}"
+                };
+            }
+
+            var (cookieName, cookieValue) =
+                ReadSessionCookie(response, cookieContainer, seerrUrl);
+
+            if (string.IsNullOrEmpty(cookieValue))
+            {
+                return new SeerrAuthResult
+                {
+                    Success = false,
+                    Error = "No session cookie received from Seerr+QC"
+                };
+            }
+
+            var responseBody = await response.Content.ReadAsStringAsync();
+            var userInfo = JsonSerializer.Deserialize<JsonElement>(responseBody);
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            var session = new SeerrSession
+            {
+                JellyfinUserId = userId,
+                SessionCookie = cookieValue,
+                SessionCookieName = cookieName ?? "connect.sid",
+                SeerrUserId = userInfo.TryGetProperty("id", out var id)
+                    ? id.GetInt32()
+                    : 0,
+                Username = username,
+                DisplayName = userInfo.TryGetProperty("displayName", out var name)
+                    ? name.GetString()
+                    : username,
+                Avatar = userInfo.TryGetProperty("avatar", out var avatar)
+                    ? avatar.GetString()
+                    : null,
+                Permissions = userInfo.TryGetProperty(
+                    "permissions",
+                    out var permissions)
+                        ? permissions.GetInt32()
+                        : 0,
+                CreatedAt = now,
+                LastValidated = now
+            };
+
+            await SaveSessionAsync(session);
+
+            _logger.LogInformation(
+                "Seerr+QC session created for Jellyfin user {UserId}",
+                userId);
+
+            return new SeerrAuthResult
+            {
+                Success = true,
+                SeerrUserId = session.SeerrUserId,
+                DisplayName = session.DisplayName,
+                Avatar = session.Avatar,
+                Permissions = session.Permissions
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Seerr+QC bootstrap failed for Jellyfin user {UserId}",
+                userId);
+
+            return new SeerrAuthResult
+            {
+                Success = false,
+                Error = "An unexpected error occurred"
+            };
+        }
+    }
+
     /// <summary>
     /// Gets the stored session for a user, optionally validating it.
     /// </summary>
